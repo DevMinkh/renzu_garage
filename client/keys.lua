@@ -251,7 +251,7 @@ end
 
 lib.onCache('vehicle', function(value)
     SetPedConfigFlag(cache.ped,429,false)
-    if value ~= 0 then
+    if value then
         local ent = Entity(value).state
         if ent.havekeys and not GetIsVehicleEngineRunning(value) and not IsVehicleNeedsToBeHotwired(value) then
             SetPedConfigFlag(cache.ped,429,false)
@@ -530,19 +530,21 @@ end)
 CreateThread(function()
     if Config.EnableLockpickCommand then
         RegisterCommand(Config.LockpickCommand, function()
-            LockPick()
+			local itemUse = true
+            LockPick(itemUse)
         end, false)
     end
     return
 end)
 
 RegisterNetEvent('renzu_garage:lockpick', function()
-    LockPick()
+	local itemUse = false
+    LockPick(itemUse)
 end)
 
 exports('lockpick', LockPick)
 
-function HotWireVehicle(veh)
+function HotWireVehicle(veh, itemUse)
     SetVehicleNeedsToBeHotwired(veh,false)
     SetVehicleDoorsLocked(veh, 1)
     local ent = Entity(veh).state
@@ -551,28 +553,32 @@ function HotWireVehicle(veh)
         SetVehicleEngineOn(veh,false,true,true)
         TaskEnterVehicle(cache.ped, veh, 10.0, -1, 2.0, 8)
         while not IsPedInAnyVehicle(cache.ped) do Wait(100) SetVehicleDoorsLocked(veh, 1) end
-        local o = {
-            dict = "anim@amb@clubhouse@tutorial@bkr_tut_ig3@",
-            name = "machinic_loop_mechandplayer",
-            speed = 1,
-            flag = 49,
-        }
-        SetTimeout(1000,function()
-            local lockpick = lib.progressBar({
-                duration = 5000,
-                label = 'Hot Wiring..',
-                useWhileDead = false,
-                canCancel = true,
-                anim = {
-                    dict = 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@',
-                    clip = 'machinic_loop_mechandplayer' 
-                },
-            })
-        end)
-        local ret = lib.skillCheck({'easy', 'easy', {areaSize = 60, speedMultiplier = 2}, 'easy'})
-        if lib.progressActive() then
-            lib.cancelProgress()
-        end
+		if itemUse then
+			local o = {
+				dict = "anim@amb@clubhouse@tutorial@bkr_tut_ig3@",
+				name = "machinic_loop_mechandplayer",
+				speed = 1,
+				flag = 49,
+			}
+			SetTimeout(1000,function()
+				local lockpick = lib.progressBar({
+					duration = 5000,
+					label = 'Hot Wiring..',
+					useWhileDead = false,
+					canCancel = true,
+					anim = {
+						dict = 'anim@amb@clubhouse@tutorial@bkr_tut_ig3@',
+						clip = 'machinic_loop_mechandplayer' 
+					},
+				})
+			end)
+			local ret = lib.skillCheck({'easy', 'easy', {areaSize = 60, speedMultiplier = 2}, 'easy'})
+			if lib.progressActive() then
+				lib.cancelProgress()
+			end
+		else
+			ret = true
+		end
         if ret then
             SetPedConfigFlag(cache.ped,429,false)
             SetVehicleEngineOn(veh,false,true,false)
@@ -590,7 +596,7 @@ function HotWireVehicle(veh)
     end
 end
 
-function LockPick()
+function LockPick(itemUse)
     local playerPed = cache.ped
     local coords    = GetEntityCoords(playerPed)
     local distanceincar = 2.0
@@ -600,32 +606,37 @@ function LockPick()
         if veh ~= 0 then
             local ent = Entity(veh).state
             if not ent.unlock then
-                SetTimeout(1000,function()
-                    local lockpick = lib.progressBar({
-                        duration = 5000,
-                        label = 'Lockpicking..',
-                        useWhileDead = false,
-                        canCancel = true,
-                        disable = {
-                            car = true,
-                        },
-                        anim = {
-                            dict = 'veh@break_in@0h@p_m_one@',
-                            clip = 'low_force_entry_ds' 
-                        },
-                    })
-                end)
-                local ret = lib.skillCheck({'easy', 'easy', {areaSize = 60, speedMultiplier = 2}, 'easy'})
-                if lib.progressActive() then
-                    lib.cancelProgress()
-                end
+				if itemUse then
+					SetTimeout(1000,function()
+						local lockpick = lib.progressBar({
+							duration = 5000,
+							label = 'Lockpicking..',
+							useWhileDead = false,
+							canCancel = true,
+							disable = {
+								car = true,
+							},
+							anim = {
+								dict = 'veh@break_in@0h@p_m_one@',
+								clip = 'low_force_entry_ds' 
+							},
+						})
+					end)
+					local ret = lib.skillCheck({'easy', 'easy', {areaSize = 60, speedMultiplier = 2}, 'easy'})
+				
+					if lib.progressActive() then
+						lib.cancelProgress()
+					end
+				else
+					ret = true
+				end
                 if ret then
                     ent.unlock = not ent.unlock
                     ent:set('unlock', ent.unlock, true)
                     local networked = NetworkGetEntityIsNetworked(veh)
                     TriggerServerEvent('statebugupdate','unlock',ent.unlock, networked and VehToNet(veh))
                     SetVehicleDoorsLocked(veh, 1)
-                    HotWireVehicle(veh)
+					HotWireVehicle(veh, itemUse)
                 else
                     if Config.EnableAlert then
                         Config.FailAlert()

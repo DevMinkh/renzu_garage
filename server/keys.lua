@@ -185,7 +185,7 @@ AddEventHandler('statebugupdate', function(name,value,net, props)
     local vehicle = NetworkGetEntityFromNetworkId(net)
     local ent = Entity(vehicle).state
     ent:set(name,value,true)
-    EnsureEntityStateBag(veicle)
+    EnsureEntityStateBag(vehicle)
     if name == 'unlock' then
         local val = 1
         if not value then
