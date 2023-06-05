@@ -35,8 +35,7 @@ GiveVehicleKey = function(plate, source, new, temporary)
         serial = serial
     }
     if not DoesPlayerHaveKey(plate,source) then
-        exports.ox_inventory:AddItem(source,'keys',1,metadata,false, function(success, reason)
-        end)
+        exports.ox_inventory:AddItem(source,'keys',1,metadata,false)
     end
 end
 
@@ -195,11 +194,11 @@ AddEventHandler('statebugupdate', function(name,value,net, props)
         end
         SetVehicleDoorsLocked(vehicle,tonumber(val))
     end
-    if name == 'unlock' then
-        local ent = Entity(vehicle).state
-        props.plate = ent.plate or props.plate
-        SetVehiclePersistent({coord = vec4(GetEntityCoords(vehicle), GetEntityHeading(vehicle)), props = props}, value)
-    end
+    -- if name == 'unlock' then
+    --     local ent = Entity(vehicle).state
+    --     --props.plate = ent.plate or props.plate
+    --     --SetVehiclePersistent({coord = vec4(GetEntityCoords(vehicle), GetEntityHeading(vehicle)), props = props}, value)
+    -- end
     if name == 'share' then
         local plate = string.gsub(GetVehicleNumberPlateText(vehicle), '^%s*(.-)%s*$', '%1')
         local result = MysqlGarage(Config.Mysql,'fetchAll','SELECT * FROM vehiclekeys WHERE `plate` = @plate', {
@@ -327,8 +326,6 @@ AddEventHandler('QBCore:Server:PlayerLoaded', function(data)
     end
 end)
 
-local servervehicles = {}
-
 AddStateBagChangeHandler('VehicleProperties' --[[key filter]], nil --[[bag filter]], function(bagName, key, value, _unused, replicated)
 	Wait(0)
 	local net = tonumber(bagName:gsub('entity:', ''), 10)
@@ -350,10 +347,6 @@ ServerEntityCreated = function(entity)
     local plate = DoesEntityExist(entity) and string.gsub(GetVehicleNumberPlateText(entity), '^%s*(.-)%s*$', '%1')
     if not plate then return end
     local havekeys = false
-    if servervehicles[plate] and DoesEntityExist(NetworkGetEntityFromNetworkId(servervehicles[plate])) and GetEntityType(NetworkGetEntityFromNetworkId(servervehicles[plate])) == 2 and servervehicles[GetVehicleNumberPlateText(NetworkGetEntityFromNetworkId(servervehicles[plate]))] then
-        DeleteEntity(NetworkGetEntityFromNetworkId(servervehicles[plate])) -- delete duplicate vehicle with the same plate wandering in the server
-    end
-    servervehicles[plate] = NetworkGetNetworkIdFromEntity(entity)
     Wait(1000)
     if Config.GiveKeystoMissionEntity and DoesEntityExist(entity) and GetEntityPopulationType(entity) == 7 and GetEntityType(entity) == 2 then -- check if vehicle is created with player (missions) eg. trucker, deliveries etc.
         local nodriver = GetPedInVehicleSeat(entity,-1) == 0 -- server native says driver seat is 1 but in my test its -1 like the client
@@ -418,9 +411,26 @@ ServerEntityCreated = function(entity)
             GlobalState.Gshare = globalkeys
             return
         end
-        local plyid = NetworkGetEntityOwner(entity) -- this is accurate only if vehicle created from client
+        local plyid = NetworkGetEntityOwner(GetPedInVehicleSeat(entity,-1)) or NetworkGetEntityOwner(entity) -- this is accurate only if vehicle created from client
         local xPlayer = players[plyid] or GetPlayerFromId(plyid)
         plate = string.gsub(GetVehicleNumberPlateText(entity), '^%s*(.-)%s*$', '%1')
+        local share = {}
+        local givetemporarykey = function()
+            local tempvehicles = gvehicles
+            plate = string.gsub(GetVehicleNumberPlateText(entity), '^%s*(.-)%s*$', '%1')
+            tempvehicles[plate] = {temp = true, plate = plate, name = "Vehicle", [owner] = xPlayer.identifier}
+            GlobalState.GVehicles = tempvehicles
+            share[xPlayer.identifier] = xPlayer.identifier
+            ent.share = share
+            globalkeys[plate] = ent.share
+            GlobalState.Gshare = globalkeys
+            local ent = Entity(entity).state
+            ent:set('havekeys',true,true)
+            ent:set('hotwired',true,true)
+            ent:set('unlock',true,true)
+            ent:set('bypasskey',true,true)
+            print(plate,'Newly Mission Vehicles Found..Adding to Key system '..plate..' '..xPlayer.identifier)
+        end
         if plyid and not gvehicles[plate] and DoesEntityExist(entity) then
             for k,v in pairs(jobplates) do
                 if string.find(plate, k) then
@@ -438,24 +448,10 @@ ServerEntityCreated = function(entity)
                     end
                 end
             end
-            local share = {}
             if havekeys and DoesEntityExist(entity) then -- if vehicle is not owned and not job vehicles, we will create a temporary vehicle key sharing for the player to avoid using hotwire eg. while in truck deliveries etc... which is created like a local vehicle
                 local xPlayer = xPlayer
                 if xPlayer and xPlayer.identifier then
-                    local tempvehicles = gvehicles
-                    plate = string.gsub(GetVehicleNumberPlateText(entity), '^%s*(.-)%s*$', '%1')
-                    tempvehicles[plate] = {temp = true, plate = plate, name = "Vehicle", [owner] = xPlayer.identifier}
-                    GlobalState.GVehicles = tempvehicles
-                    share[xPlayer.identifier] = xPlayer.identifier
-                    ent.share = share
-                    globalkeys[plate] = ent.share
-                    GlobalState.Gshare = globalkeys
-                    local ent = Entity(entity).state
-                    ent:set('havekeys',true,true)
-                    ent:set('hotwired',true,true)
-                    ent:set('unlock',true,true)
-                    ent:set('bypasskey',true,true)
-                    print(plate,'Newly Mission Vehicles Found..Adding to Key system '..plate..' '..xPlayer.identifier)
+                    givetemporarykey()
                 end
             end
         elseif plyid and xPlayer and gvehicles[plate] and xPlayer.identifier and xPlayer.identifier ~= GlobalState.GVehicles[plate][owner] then
@@ -475,13 +471,15 @@ ServerEntityCreated = function(entity)
             end
         end
         Wait(2000)
-        if Config.GiveKeystoMissionEntity and Config.Ox_Inventory and DoesEntityExist(entity) and GetPedInVehicleSeat(entity,-1) ~= 0 then
+        if Config.GiveKeystoMissionEntity and DoesEntityExist(entity) and GetPedInVehicleSeat(entity,-1) ~= 0 then
             if IsPedAPlayer(GetPedInVehicleSeat(entity,-1)) then
                 local net = NetworkGetEntityOwner(GetPedInVehicleSeat(entity,-1))
                 local plate = string.gsub(GetVehicleNumberPlateText(entity), '^%s*(.-)%s*$', '%1')
-                if not DoesPlayerHaveKey(plate,net) then
+                if Config.Ox_Inventory and not DoesPlayerHaveKey(plate,net) then
                     GiveVehicleKey(plate,net,false,true)
                     TriggerClientEvent('startvehicle',net)
+                elseif not Config.Ox_Inventory and GetPlayerFromId(plyid) then
+                    givetemporarykey()
                 end
             end
         end

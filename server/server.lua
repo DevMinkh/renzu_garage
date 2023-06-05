@@ -5,6 +5,50 @@ end
 if Config.framework == 'QBCORE' then
     StopResource('qb-vehiclekeys') -- conflict
 end
+
+local ServerVehicle = CreateVehicleServerSetter
+lib.callback.register('renzu_garage:CreateVehicle', function(src,data)
+    local src = src
+    local routing = GetPlayerRoutingBucket(src)
+
+    local randomroute = math.random(100,999)
+
+    SetPlayerRoutingBucket(src,randomroute)
+
+    local vehicle = ServerVehicle and ServerVehicle(data.model, data.type, data.coord, data.heading) or CreateVehicle(data.model,data.coord.x,data.coord.y,data.coord.z,data.heading, true, true)
+
+    while not ServerVehicle and not DoesEntityExist(vehicle) do Wait(0) end
+    -- isolate vehicle and player to get ownership instantly
+    SetEntityRoutingBucket(vehicle,randomroute)
+
+    while NetworkGetEntityOwner(vehicle) == -1 do Wait(0) end
+
+    SetVehicleNumberPlateText(vehicle,data?.prop.plate)
+
+    SetPedIntoVehicle(GetPlayerPed(src),vehicle,-1) -- set player into vehicle. automatically asked the server to request ownership
+
+    while NetworkGetEntityOwner(vehicle) ~= src do 
+        SetPedIntoVehicle(GetPlayerPed(src),vehicle,-1) -- make sure player is in seat
+        Wait(10)
+    end -- wait for entity ownership
+
+    local netid = NetworkGetNetworkIdFromEntity(vehicle)
+
+    if ServerVehicle then
+	    TriggerEvent('entityCreated', vehicle)
+    end
+
+    TriggerClientEvent('renzu_garage:SetVehicleProperties',NetworkGetEntityOwner(vehicle),netid,data.prop)
+
+    SetTimeout(1000,function()
+        SetPlayerRoutingBucket(src,routing)
+        SetEntityRoutingBucket(vehicle,routing)
+        SetPedIntoVehicle(GetPlayerPed(src),vehicle,-1)
+    end)
+
+    return netid
+end)
+
 RegisterServerEvent('renzu_garage:GetVehiclesTable')
 AddEventHandler('renzu_garage:GetVehiclesTable', function(garageid,public,garagekey)
     local src = source 
@@ -170,6 +214,8 @@ DoesPlayerHaveKey = function(plate,source,remove)
 end
 
 RegisterServerCallBack_('renzu_garage:changestate', function (source, cb, plate,state,garage_id,model,props,impound_cdata, public)
+    local plate = plate
+    local props = props
     if not Config.PlateSpace then
         plate = string.gsub(tostring(plate), '^%s*(.-)%s*$', '%1'):upper()
     else
@@ -184,11 +230,11 @@ RegisterServerCallBack_('renzu_garage:changestate', function (source, cb, plate,
     or GlobalState.GVehicles[string.gsub(plate, '^%s*(.-)%s*$', '%1')] and GlobalState.GVehicles[string.gsub(plate, '^%s*(.-)%s*$', '%1')].owner
     or xPlayer.identifier
     if public then
-        local r = MysqlGarage(Config.Mysql,'fetchAll','SELECT * FROM '..vehicletable..' WHERE TRIM(UPPER(plate)) = @plate LIMIT 1', {
+        local Public = MysqlGarage(Config.Mysql,'fetchAll','SELECT * FROM '..vehicletable..' WHERE TRIM(UPPER(plate)) = @plate LIMIT 1', {
             ['@plate'] = plate
         })
-        if r and r[1] then
-            identifier = r[1][owner]
+        if Public and Public[1] then
+            identifier = Public[1][owner]
         else
             Config.Notify('info',Message[2], 'Vehicle is not owned', xPlayer)
             cb(false,public)
@@ -213,7 +259,7 @@ RegisterServerCallBack_('renzu_garage:changestate', function (source, cb, plate,
             end
             if result[1][vehiclemod] ~= nil then
                 local veh = json.decode(result[1][vehiclemod])
-                if veh.model == model or true then
+                if veh.model == model then
                     local var = {
                         ['@vehicle'] = json.encode(props),
                         ['@garage_id'] = garage_id,
@@ -502,5 +548,34 @@ RegisterServerCallBack_('renzu_garage:disposevehicle', function (source, cb, pla
             end
             cb(stored,impound,garage_impound or false,impound_fee,sharedvehicle)
         end
+    end
+end)
+
+RegisterCommand('givecar', function(source,args) -- @plate, @PLAYERID, @modelname, 
+    local vehicles = GlobalState.GVehicles
+    local plate = args[1]
+    local xPlayer = GetPlayerFromId(tonumber(args[2]))
+    if GetPlayerFromId(source).getGroup() ~= 'admin' then return end
+    if plate and args[2] and xPlayer and not vehicles[plate] then
+        local vehicles = GlobalState.GVehicles
+        local props = {}
+        props.model = joaat(args[3])
+        props.plate = plate
+        local plate = string.gsub(props.plate, '^%s*(.-)%s*$', '%1')
+        local result = MysqlGarage(Config.Mysql,'fetchAll','INSERT INTO '..vehicletable..' ('..owner..', plate, '..vehiclemod..', `'..stored..'`) VALUES (@owner, @plate, @vehicle, @stored)', {
+            ['@owner'] = xPlayer.identifier,
+            ['@plate'] = plate,
+            ['@vehicle'] = json.encode(props),
+            ['@stored'] = 1
+        })
+        local tempvehicles = GlobalState['vehicles'..xPlayer.identifier]
+        tempvehicles[plate] = {}
+        tempvehicles[plate][owner] = newtransfer[1][owner]
+        tempvehicles[plate].plate = plate
+        tempvehicles[plate].name = 'NULL'
+        GlobalState['vehicles'..xPlayer.identifier] = tempvehicles
+    else
+        print('plate is not available or missing fields')
+        xPlayer.showNotification('plate is not available or missing fields', 1, 0)
     end
 end)

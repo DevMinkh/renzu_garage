@@ -309,6 +309,7 @@ function VehiclesinGarage(coords, distance, property, propertycoord, gid)
             for k,v in pairs(vehiclesdb) do
                 if GetEntityModel(vehicle) == GetHashKey(v.model) then
                     name = v.name
+                    break
                 end
             end
             if name == 'not found' then
@@ -342,6 +343,7 @@ function VehiclesinGarage(coords, distance, property, propertycoord, gid)
             while dist < 3 and not IsPedInAnyVehicle(cache.ped) and ingarage do
                 coords = GetEntityCoords(cache.ped)
                 vehcoords = GetEntityCoords(vehicle)
+                FreezeEntityPosition(vehicle,true)
                 dist = #(coords-vehcoords)
                 Wait(100)
             end
@@ -391,9 +393,10 @@ function VehiclesinGarage(coords, distance, property, propertycoord, gid)
                     lib.showContext('usevehicle')
                     while IsPedInAnyVehicle(cache.ped) and ingarage do
                         coords = GetEntityCoords(cache.ped)
+                        FreezeEntityPosition(vehicle,true)
                         vehcoords = GetEntityCoords(vehicle)
                         dist = #(coords-vehcoords)
-                        Wait(500)
+                        Wait(111)
                     end
                 else
                     local table = {
@@ -888,7 +891,6 @@ function GotoGarage(garageid, property, propertycoord, job)
 end
 
 function CreateGarageShell()
-    print('creating')
     local ped = cache.ped
     garage_coords = GetEntityCoords(ped)+vector3(0,0,20)
     local count = 0
@@ -1001,7 +1003,6 @@ function GetVehicleClassname(vehicle)
 end
 
 function CreateGarageShell()
-    print('creating')
     local ped = cache.ped
     garage_coords = GetEntityCoords(ped)+vector3(0,0,20)
     local count = 0
@@ -1154,7 +1155,7 @@ end
 GarageType = {
     car = function(model)
         local class = GetVehicleClassnamemodel(model)
-        return class ~= 'Boats' and class ~= 'Helicopters' and class ~= 'Planes'
+        return class ~= 'Boats' and class ~= 'Helicopters' and class ~= 'Planes' and IsModelInCdimage(model)
     end,
     boat = function(model)
         local class = GetVehicleClassnamemodel(model)
@@ -1206,7 +1207,8 @@ function OpenGarage(garageid,garage_type,jobonly,default)
                 if v.stored == 0 then
                     v.stored = false
                 end
-                if v.stored and ImpoundedLostVehicle and GarageType[garage_type](v.model) or not ImpoundedLostVehicle and GarageType[garage_type](v.model) then
+                local model = v.model2 or joaat(v.model)
+                if v.stored and ImpoundedLostVehicle and GarageType[garage_type](model) or not ImpoundedLostVehicle and GarageType[garage_type](model) then
                     if cats[v.brand] == nil then
                         cats[v.brand] = 0
                         totalcats = totalcats + 1
@@ -1283,7 +1285,8 @@ function OpenGarage(garageid,garage_type,jobonly,default)
                         impound = v.impound or 0,
                         ingarage = v.ingarage or false
                     }
-                    if GarageType[garage_type](v.model) then
+                    local model = v.model2 or joaat(v.model)
+                    if GarageType[garage_type](model) then
                         table.insert(vehtable[v.garage_id], veh)
                     end
                 end
@@ -1293,7 +1296,6 @@ function OpenGarage(garageid,garage_type,jobonly,default)
     lastcat = cat
     cat = nil
     if cars > 0 then
-        print("INSIDE")
         SendNUIMessage(
             {
                 garage_id = garageid,
@@ -1532,7 +1534,7 @@ function SetVehicleProp(vehicle, mods)
     end
     if mods.deformation then
         local deformation = json.decode(mods.deformation)
-        SetVehicleDeformation(vehicle,deformation)
+        Entity(vehicle).state:set('deformation',deformation,true)
     end
     if Config.use_RenzuCustoms then
         exports.renzu_customs:SetVehicleProp(vehicle,mods)
@@ -1860,39 +1862,35 @@ end
 function DrawInteraction_(i,v,reqdist,msg,event,server,var,disablemarker)
     local i = i
     if not markers[i] and i ~= nil and not inGarage then
-        local ped = cache.ped
-        local inveh = IsPedInAnyVehicle(ped)
-        --Citizen.CreateThread(function()
-            markers[i] = true
-            --local reqdist = reqdist[2]
-            local coord = v
-            local dist = #(GetEntityCoords(ped) - coord)
-            while dist < reqdist[1] and not cancel do
-                if inveh ~= IsPedInAnyVehicle(ped) then
-                    break
-                end
-                drawsleep = 1
-                dist = #(GetEntityCoords(ped) - coord)
-                --if dist < reqdist[1] then ShowFloatingHelpNotification(msg, coord, disablemarker , i) end
-                if dist < reqdist[1] and IsControlJustReleased(1, 51) then
-                    lib.hideTextUI()
-                    --ShowFloatingHelpNotification(msg, coord, disablemarker , i)
-                    if not server then
-                        TriggerEvent(event,i,var)
-                    elseif server then
-                        TriggerServerEvent(event,i,var)
-                    end
-                    Wait(1000)
-                    break
-                end
-                Wait(drawsleep)
+    local ped = cache.ped
+    local inveh = IsPedInAnyVehicle(ped)
+        markers[i] = true
+        local coord = v
+        local dist = #(GetEntityCoords(ped) - coord)
+        while dist < reqdist[1] and not cancel do
+            DrawMarker(36, coord.x, coord.y, coord.z-0.4, 0.0, 0.0, 0.0, 180.0, 180.0, -180.0, 1.0, 1.0, 1.0, dist < 7 and vec3(0, 0, 225) or vec3(200, 255, 255), 50, true, true, 2, nil, nil, false)
+            if inveh ~= IsPedInAnyVehicle(ped) then
+                break
             end
-            ClearAllHelpMessages()
-            markers[i] = false
-            while inGarage do Wait(1) end
-            cancel = false
-            return true
-        --end)
+            drawsleep = 1
+            dist = #(GetEntityCoords(ped) - coord)
+            if dist < reqdist[1] and IsControlJustReleased(1, 51) then
+                lib.hideTextUI()
+                if not server then
+                    TriggerEvent(event,i,var)
+                elseif server then
+                    TriggerServerEvent(event,i,var)
+                end
+                Wait(1000)
+                break
+            end
+            Wait(drawsleep)
+        end
+        ClearAllHelpMessages()
+        markers[i] = false
+        while inGarage do Wait(1) end
+        cancel = false
+        return true
     end
 end
 
@@ -1958,18 +1956,23 @@ end
 
 local isDebug = false
 local MAX_DEFORM_ITERATIONS = 50
-local DEFORMATION_DAMAGE_THRESHOLD = 0.001
+local DEFORMATION_DAMAGE_THRESHOLD = 0.05
+
+function Round(value, numDecimals)
+	return math.floor(value * 10^numDecimals) / 10^numDecimals
+end
+
 function GetVehicleDeformation(vehicle)
     assert(vehicle ~= nil and DoesEntityExist(vehicle), "Parameter \"vehicle\" must be a valid vehicle entity!")
 	local min, max = GetModelDimensions(GetEntityModel(vehicle))
-	local X = (max.x - min.x) * 0.5
-	local Y = (max.y - min.y) * 0.5
-	local Z = (max.z - min.z) * 0.5
-	local halfY = Y * 0.5
+	local X = Round((max.x - min.x) * 0.5, 2)
+	local Y = Round((max.y - min.y) * 0.5, 2)
+	local Z = Round((max.z - min.z) * 0.5, 2)
+	local halfY = Round(Y * 0.5, 2)
     local positions = { vector3(-X, Y,  0.0), vector3(-X, Y,  Z), vector3(0.0, Y,  0.0), vector3(0.0, Y,  Z), vector3(X, Y,  0.0), vector3(X, Y,  Z), vector3(-X, halfY,  0.0), vector3(-X, halfY,  Z), vector3(-X, halfY + (halfY / 2),  0.0), vector3(-X, halfY + (halfY / 2),  Z), vector3(-X, halfY - (halfY / 2),  0.0), vector3(-X, halfY - (halfY / 2),  Z), vector3(0.0, halfY,  0.0), vector3(0.0, halfY,  Z), vector3(X, halfY + (halfY / 2),  0.0), vector3(X, halfY + (halfY / 2),  Z), vector3(X, halfY - (halfY / 2),  0.0), vector3(X, halfY - (halfY / 2),  Z), vector3(-X, 0.0,  0.0), vector3(-X, 0.0,  Z), vector3(0.0, 0.0,  0.0), vector3(0.0, 0.0,  Z), vector3(X, 0.0,  0.0), vector3(X, 0.0,  Z), vector3(-X, -halfY,  0.0), vector3(-X, -halfY,  Z), vector3(-X, -(halfY + (halfY / 2)),  0.0), vector3(-X, -(halfY + (halfY / 2)),  Z), vector3(-X, -(halfY - (halfY / 2)),  0.0), vector3(-X, -(halfY - (halfY / 2)),  Z), vector3(0.0, -halfY,  0.0), vector3(0.0, -halfY,  Z), vector3(0.0, -(halfY + (halfY / 2)),  0.0), vector3(0.0, -(halfY + (halfY / 2)),  Z), vector3(0.0, -(halfY - (halfY / 2)),  0.0), vector3(0.0, -(halfY - (halfY / 2)),  Z), vector3(X, -halfY,  0.0), vector3(X, -halfY,  Z), vector3(X, -(halfY + (halfY / 2)),  0.0), vector3(X, -(halfY + (halfY / 2)),  Z), vector3(X, -(halfY - (halfY / 2)),  0.0), vector3(X, -(halfY - (halfY / 2)),  Z), vector3(-X, -Y,  0.0), vector3(-X, -Y,  Z), vector3(0.0, -Y,  0.0), vector3(0.0, -Y,  Z), vector3(X, -Y,  0.0), vector3(X, -Y,  Z), vector3(-(X / 2), Y,  0.0), vector3(-(X / 2), Y,  Z), vector3((X / 2), Y,  0.0), vector3((X / 2), Y,  Z), vector3(-(X / 2), halfY,  0.0), vector3(-(X / 2), halfY,  Z), vector3(-(X / 2), halfY + (halfY / 2),  0.0), vector3(-(X / 2), halfY + (halfY / 2),  Z), vector3(-(X / 2), halfY - (halfY / 2),  0.0), vector3(-(X / 2), halfY - (halfY / 2),  Z), vector3((X / 2), halfY + (halfY / 2),  0.0), vector3((X / 2), halfY + (halfY / 2),  Z), vector3((X / 2), halfY - (halfY / 2),  0.0), vector3((X / 2), halfY - (halfY / 2),  Z), vector3(-(X / 2), 0.0,  0.0), vector3(-(X / 2), 0.0,  Z), vector3(-(X / 2), -halfY,  0.0), vector3(-(X / 2), -halfY,  Z), vector3(-(X / 2), -(halfY + (halfY / 2)),  0.0), vector3(-(X / 2), -(halfY + (halfY / 2)),  Z), vector3(-(X / 2), -(halfY - (halfY / 2)),  0.0), vector3(-(X / 2), -(halfY - (halfY / 2)),  Z), vector3((X / 2), -halfY,  0.0), vector3((X / 2), -halfY,  Z), vector3((X / 2), -(halfY + (halfY / 2)),  0.0), vector3((X / 2), -(halfY + (halfY / 2)),  Z), vector3((X / 2), -(halfY - (halfY / 2)),  0.0), vector3((X / 2), -(halfY - (halfY / 2)),  Z), vector3(-(X / 2), -Y,  0.0), vector3(-(X / 2), -Y,  Z), vector3((X / 2), -Y,  0.0), vector3((X / 2), -Y,  Z), vector3(-X, Y,  -Z), vector3(0.0, Y,  -Z), vector3(X, Y,  -Z), vector3(-X, halfY,  -Z), vector3(-X, halfY + (halfY / 2),  -Z), vector3(-X, halfY - (halfY / 2),  -Z), vector3(0.0, halfY,  -Z), vector3(X, halfY + (halfY / 2),  -Z), vector3(X, halfY - (halfY / 2),  -Z), vector3(-X, 0.0,  -Z), vector3(0.0, 0.0,  -Z), vector3(X, 0.0,  -Z), vector3(-X, -halfY,  -Z), vector3(-X, -(halfY + (halfY / 2)),  -Z), vector3(-X, -(halfY - (halfY / 2)),  -Z), vector3(0.0, -halfY,  -Z), vector3(0.0, -(halfY + (halfY / 2)),  -Z), vector3(0.0, -(halfY - (halfY / 2)),  -Z), vector3(X, -halfY,  -Z), vector3(X, -(halfY + (halfY / 2)),  -Z), vector3(X, -(halfY - (halfY / 2)),  -Z), vector3(-X, -Y,  -Z), vector3(0.0, -Y,  -Z), vector3(X, -Y,  -Z), vector3(-(X / 2), Y,  -Z), vector3((X / 2), Y,  -Z), vector3(-(X / 2), halfY,  -Z), vector3(-(X / 2), halfY + (halfY / 2),  -Z), vector3(-(X / 2), halfY - (halfY / 2),  -Z), vector3((X / 2), halfY + (halfY / 2),  -Z), vector3((X / 2), halfY - (halfY / 2),  -Z), vector3(-(X / 2), 0.0,  -Z), vector3(-(X / 2), -halfY,  -Z), vector3(-(X / 2), -(halfY + (halfY / 2)),  -Z), vector3(-(X / 2), -(halfY - (halfY / 2)),  -Z), vector3((X / 2), -halfY,  -Z), vector3((X / 2), -(halfY + (halfY / 2)),  -Z), vector3((X / 2), -(halfY - (halfY / 2)),  -Z), vector3(-(X / 2), -Y,  -Z), vector3((X / 2), -Y,  -Z), }
     local deformationPoints = {}
 	for i, pos in ipairs(positions) do
-		local dmg = #(GetVehicleDeformationAtPos(vehicle, pos))
+		local dmg = math.floor(#(GetVehicleDeformationAtPos(vehicle, pos)) * 1000.0) / 1000.0
 		if (dmg > DEFORMATION_DAMAGE_THRESHOLD) then
 			table.insert(deformationPoints, { pos, dmg })
 		end
@@ -1982,19 +1985,19 @@ function SetVehicleDeformation(vehicle, deformationPoints, callback)
     assert(deformationPoints ~= nil and type(deformationPoints) == "table", "Parameter \"deformationPoints\" must be a table!")
     CreateThread(function()
 		local min, max = GetModelDimensions(GetEntityModel(vehicle))
-		local radius = #(max - min) * 50.0			-- might need some more experimentation
-		local damageMult = #(max - min) * 50.0		-- might need some more experimentation
+        local damageMult = #(max - min) * 2.5		-- might need some more experimentation
+
         local printMsg = false
 		for i, def in ipairs(deformationPoints) do
-			def[1] = vector3(def[1].x, def[1].y, def[1].z)
+			def[1] = vector3(Round(def[1].x,2), Round(def[1].y,2), Round(def[1].z,2))
 		end
 		local deform = true
 		local iteration = 0
 		while (deform and iteration < MAX_DEFORM_ITERATIONS) do
 			deform = false
 			for i, def in ipairs(deformationPoints) do
-				if (#(GetVehicleDeformationAtPos(vehicle, def[1])) < def[2]) then
-					SetVehicleDamage(vehicle, def[1] * 2.0, def[2] * damageMult, radius, true)
+				if (#(GetVehicleDeformationAtPos(vehicle, def[1])) < Round(def[2]*0.99,2)) then
+					SetVehicleDamage(vehicle, def[1] * 2.0, Round(def[2] * damageMult,2), 1000.0, true)
 					deform = true
 				end
 			end

@@ -76,7 +76,6 @@ function isVehicleUnlocked()
                 Wait(1000)
                 SetVehicleEngineOn(v,false,true,true)
             end
-            TaskLeaveVehicle(p,v,0)
             Wait(1000)
             if r and not Config.Ox_Inventory then
                 SetVehicleEngineOn(v,true,true,false)
@@ -708,7 +707,7 @@ end)
 
 RegisterCommand(Config.VehicleKeysCommand, function(source, args, rawCommand)
     TriggerServerCallback_("renzu_garage:getgaragekeys",function(sharedkeys,players)
-        if Config.GarageKeys and PlayerData.job ~= nil and not Config.Ox_Inventory then
+        if Config.GarageKeys and PlayerData.job ~= nil then
             local owned_vehicles = GlobalState['vehicles'..PlayerData.identifier] or {}
             local ped = cache.ped
             local coords = GetEntityCoords(ped)

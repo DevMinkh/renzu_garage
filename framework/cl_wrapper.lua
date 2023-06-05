@@ -47,6 +47,97 @@ SetBlips = function(x,y,z,sprite,scale,color,name,display)
 	EndTextCommandSetBlipName(blip)
 end
 
+local garageped = {}
+local targetid = nil
+local textactive = false
+AddTarget = function(data)
+	function onEnter(self)
+		if DoesEntityExist(garageped[data.garage]) then DeleteEntity(garageped[data.garage]) end
+		local model = `a_m_m_skater_01`
+		lib.requestModel(model)
+		local ped = CreatePed(4,model,self.coords.x,self.coords.y,self.coords.z,0.0,false,true)
+		while not DoesEntityExist(ped) do Wait(0) end
+		SetPedConfigFlag(ped,17,true)
+		TaskTurnPedToFaceEntity(ped,cache.ped,-1)
+		Wait(1000)
+		TaskStandGuard(ped,self.coords,GetEntityHeading(ped),'WORLD_HUMAN_GUARD_STAND')
+		garageped[data.garage] = ped
+		local options = {
+			{
+				name = data.garage,
+				onSelect = function()
+					tid = data.id
+					TID(data.id)
+					TriggerEvent(data.event,data.id,data.args or false)
+				end,
+				icon = 'fas fa-warehouse',
+				label = data.label,
+			}
+		}
+		if cache.vehicle then
+			table.insert(options,{
+				name = 'storevehicle',
+				onSelect = function()
+					tid = data.id
+					TID(data.id)
+					TriggerEvent(data.event,data.id,true)
+				end,
+				icon = 'fas fa-parking',
+				label = 'Store Last Vehicle',
+			})
+		end
+		if Config.target and GetResourceState('ox_target') ~= 'started' and GetResourceState('qb-target') == 'started' then -- needed to be like this instead of relying ox_target compatibility with qb-target. since ox does not support AddTargetEntity to local entity during convert.
+			for k,v in pairs(options) do if v.onSelect then v.action = v.onSelect end end
+			targetid = exports['qb-target']:AddTargetEntity(ped, {
+				options = options,
+				distance = 3.0
+			})
+		elseif GetResourceState('ox_target') == 'started' then
+			targetid = exports['ox_target']:addLocalEntity(ped, options)
+		end
+	end
+	
+	function onExit(self)
+		DeleteEntity(garageped[data.garage])
+		if targetid then
+			exports.ox_target:removeZone(targetid)
+		end
+		lib.hideTextUI()
+		Wait(1000)
+		textactive = false
+	end
+	
+	function inside(self)
+		local coord = GetEntityCoords(garageped[data.garage])
+		local storing = cache.vehicle and self.distance < 7
+		DrawMarker(1, coord.x, coord.y, coord.z-0.4, 0.0, 0.0, 0.0, 0.0, 180.0, 0.0, 1.0, 1.0, 1.0, self.distance < 7 and vec3(0, 0, 225) or vec3(200, 255, 255), 50, false, true, 2, nil, nil, false)
+		if storing then
+			OxlibTextUi('[E] Store Vehicle',true)
+		end
+		while cache.vehicle and self.distance < 7 do 
+			Wait(1) 
+			DrawMarker(1, coord.x, coord.y, coord.z-0.4, 0.0, 0.0, 0.0, 0.0, 180.0, 0.0, 1.0, 1.0, 1.0, 0, 255, 51, 50, false, true, 2, nil, nil, false)
+			if IsControlJustPressed(0,38) then
+				tid = data.id
+				TID(data.id)
+				TriggerEvent('opengarage', data.id, true)
+				lib.hideTextUI()
+			end
+		end
+		if textactive then lib.hideTextUI() Wait(100) end
+		textactive = false
+	end
+	lib.zones.box({
+		coords = vec3(data.coord.x,data.coord.y,data.coord.z),
+		size = vec3(55, 55, 55),
+		rotation = 45,
+		debug = false,
+		inside = inside,
+		onEnter = onEnter,
+		onExit = onExit
+	})
+end
+
 GarageZone = {}
 GarageZone.Spheres = {}
 GarageZone.__index = {}
@@ -62,6 +153,9 @@ GarageZone.CheckZone = function(garage,f)
 end
 GarageZone.PrivateAdd = function(coord,garage,dist,job,id,data)
 	if not Config.Oxlib then return end
+	if Config.target and GetResourceState('ox_target') == 'started' or Config.target and GetResourceState('qb-target') == 'started' then
+		return AddTarget{id = id, coord = coord, label = data.name, event = 'renzu_garage:opengaragemenu', args = data, garage = garage}
+	end
 	local garage = data.name
 	function onEnter(self)
 		CreateThread(function() -- create thread to suport multi zones
@@ -114,6 +208,9 @@ end
 
 GarageZone.AddZone = function(coord,garage,dist,job,id)
 	if not Config.Oxlib then return end
+	if Config.target and GetResourceState('ox_target') == 'started' or Config.target and GetResourceState('qb-target') == 'started' then
+		return AddTarget{id = id, coord = coord, label = 'Request Vehicle Keys', event = 'requestvehkey', garage = garage}
+	end
     function onEnter(self)
 		CreateThread(function() -- create thread to suport multi zones
 			local self = self local garage = garage local coord = coord local job = job local dist = dist local tid = tid
@@ -139,6 +236,9 @@ end
 
 GarageZone.Add = function(coord,garage,dist,job,id)
 	if not Config.Oxlib then return end
+	if Config.target and GetResourceState('ox_target') == 'started' or Config.target and GetResourceState('qb-target') == 'started' then
+		return AddTarget{id = id, coord = coord, label = Message[2]..' '..garage, event = 'opengarage', garage = garage}
+	end
     local garage = garage
     local coord = coord
 	local job = job
@@ -186,10 +286,16 @@ RecreateGarageInfo = function()
 				GarageZone.Add(vector3(v.garage_x, v.garage_y, v.garage_z),v.garage,4,v.job ~= nil and v.job == PlayerData.job.name and v.job or nil,tid)
 			end
 		end
+		if Config.EnableHeliGarage and PlayerData.job ~= nil and helispawn[PlayerData.job.name] ~= nil then
+			for k,v in pairs(helispawn[PlayerData.job.name]) do
+				GarageZone.Add(vector3(v.coords.x,v.coords.y,v.coords.z),v.garage,5,PlayerData.job.name,v.garage)
+			end
+		end
 	end
 end
 
-OxlibTextUi = function(msg)
+OxlibTextUi = function(msg,block)
+	if textactive and block then return end
 	lib.showTextUI(msg, {
 		position = "left-center",
 		icon = 'car',
@@ -199,6 +305,7 @@ OxlibTextUi = function(msg)
 			color = 'white'
 		}
 	})
+	textactive = true
 end
 
 function Playerloaded()
